@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>体験フォト確認アプリ</title>
+  <link href="css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="d-flex flex-column align-items-center">
+
+  <div class="w-100 bg-primary text-white p-3 d-flex align-items-start">
+    <h1 class="m-0">体験フォト確認アプリ</h1>
+  </div>
+
+  <div class="container my-4">
+    <div class="row">
+      <div class="col-md-10 d-flex justify-content-center">
+        <canvas id="imageCanvas" class="border border-secondary"></canvas>
+      </div>
+
+      <div class="col-md-2 d-flex flex-column gap-3 align-items-start">
+        <button id="nextBtn" type="button" class="btn btn-primary w-100" onclick="loadNextImage()">NEXT</button>
+        <button id="resetBtn" type="button" class="btn btn-secondary w-100" onclick="resetMosaic()">RESET</button>
+
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="check1" onclick="updateSubmitState()">
+          <label class="form-check-label" for="check1">チェック済み</label>
+        </div>
+
+        <button id="submitBtn" type="button" class="btn btn-success w-100" disabled onclick="submitImage()">SUBMIT</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/bootstrap.bundle.min.js"></script>
+  <script>
+    const canvas = document.getElementById('imageCanvas');
+    const ctx = canvas.getContext('2d');
+    const nextBtn = document.getElementById('nextBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const checkBox = document.getElementById('check1');
+
+    const CANVAS_WIDTH = 800;
+    const CANVAS_HEIGHT = 600;
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    function drawInitialCanvas() {
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    drawInitialCanvas();
+
+    let image = new Image();
+    let imgWidth, imgHeight;
+    let imageLoaded = false;
+
+    /*
+     * 体験フォトと情報を取りまわすためのオブジェクト
+     * 内容物
+     *   photoId
+     *   userId
+     *   s3Key
+     *   receiptHandle
+     *   imageUrl
+     */
+    let imageInfo = {};
+
+    // モザイクした矩形領域のリスト
+    let mosaicRects = [];
+
+    // 体験フォトと情報取得
+    async function fetchImage(url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("HTTP error " + response.status);
+        const data = await response.json();
+  
+        const byteCharacters = atob(data.imageBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+  
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+  
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: data.contentType });
+  
+        return {
+          photoId: data.photoId,
+          userId: data.userId,
+          s3Key: data.s3key,
+          receiptHandle: data.receiptHandle, // SQSメッセージの削除用ハンドル
+          imageUrl: URL.createObjectURL(blob)
+        };
+  
+      } catch (err) {
+        console.error("Fetch failed:", err);
+        return null;
+      }
+    }
+
+    // 体験フォト取得してキャンバスにロード
+    async function loadNextImage() {
+      nextBtn.disabled = true;
+      const res = await fetchImage('/next');
+      if (!res) {
+        alert('画像の取得に失敗しました');
+        nextBtn.disabled = false;
+        return;
+      }
+      imageInfo = res;
+
+      image = new Image();
+      image.onload = () => {
+        const imgRatio = image.width / image.height;
+        const canvasRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+
+        if (imgRatio > canvasRatio) {
+          imgWidth = CANVAS_WIDTH;
+          imgHeight = CANVAS_WIDTH / imgRatio;
+        } else {
+          imgHeight = CANVAS_HEIGHT;
+          imgWidth = CANVAS_HEIGHT * imgRatio;
+        }
+
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
+        imageLoaded = true;
+        mosaicRects = [];
+
+        updateSubmitState();
+      };
+      image.src = res.imageUrl;
+    }
+
+    // モザイク領域をリセット
+    function resetMosaic() {
+      mosaicRects = [];
+      if (imageLoaded) {
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
+      }
+    }
+
+    // 確認チェックのフラグを反転する
+    function updateSubmitState() {
+      submitBtn.disabled = !checkBox.checked || !imageLoaded;
+    }
+
+    // 確認済み体験フォトのアップロード
+    async function postImage(url, blob) {
+      const formData = new FormData();
+      formData.append("file", blob, "mosaic.png");
+
+      // imageInfo を JSON 文字列にして送る
+      delete imageInfo.imageUrl;
+      console.log(imageInfo)
+
+      formData.append("imageInfo", JSON.stringify(imageInfo));
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error("POST failed: " + response.status);
+        }
+
+        console.log("画像をPOSTしました");
+        return await response.text();
+      } catch (err) {
+        console.error(err);
+        alert("画像の送信に失敗しました");
+      }
+    }
+
+    // 矩形領域を縮小拡大することでモザイクをかける
+    function applyMosaic(left, top, right, bottom, scale = 0.05) {
+      const x1 = Math.max(0, Math.min(imgWidth, Math.floor(left)));
+      const x2 = Math.max(0, Math.min(imgWidth, Math.floor(right)));
+      const y1 = Math.max(0, Math.min(imgHeight, Math.floor(top)));
+      const y2 = Math.max(0, Math.min(imgHeight, Math.floor(bottom)));
+      if (x2 <= x1 || y2 <= y1) return;
+
+      const width = x2 - x1;
+      const height = y2 - y1;
+
+      const imgData = ctx.getImageData(0, 0, imgWidth, imgHeight);
+      const data = imgData.data;
+
+      const smallWidth = Math.max(1, Math.floor(width * scale));
+      const smallHeight = Math.max(1, Math.floor(height * scale));
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      const region = ctx.getImageData(x1, y1, width, height);
+      tempCtx.putImageData(region, 0, 0);
+
+      const smallCanvas = document.createElement('canvas');
+      smallCanvas.width = smallWidth;
+      smallCanvas.height = smallHeight;
+      const smallCtx = smallCanvas.getContext('2d');
+      smallCtx.drawImage(tempCanvas, 0, 0, smallWidth, smallHeight);
+
+      tempCtx.imageSmoothingEnabled = false;
+      tempCtx.clearRect(0, 0, width, height);
+      tempCtx.drawImage(smallCanvas, 0, 0, smallWidth, smallHeight, 0, 0, width, height);
+
+      const smallData = tempCtx.getImageData(0, 0, width, height);
+
+      for (let j = 0; j < height; j++) {
+        for (let i = 0; i < width; i++) {
+          const idxSmall = (j * width + i) * 4;
+          const idxBig = ((y1 + j) * imgWidth + (x1 + i)) * 4;
+          data[idxBig] = smallData.data[idxSmall];
+          data[idxBig + 1] = smallData.data[idxSmall + 1];
+          data[idxBig + 2] = smallData.data[idxSmall + 2];
+          data[idxBig + 3] = smallData.data[idxSmall + 3];
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    // モザイク処理した画像を描画
+    function redrawImage() {
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      if (imageLoaded) {
+        ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
+      } else {
+        drawInitialCanvas();
+      }
+      mosaicRects.forEach(rect =>
+        applyMosaic(rect.left, rect.top, rect.right, rect.bottom)
+      );
+    }
+
+    // ドラッグアンドドロップの状態を持つ変数
+    let startX, startY, isDrawing = false;
+
+    // マウスダウン
+    canvas.addEventListener('mousedown', (e) => {
+      if (!imageLoaded) return;
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      isDrawing = true;
+    });
+
+    // マウス移動
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isDrawing || !imageLoaded) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      redrawImage();
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(startX, startY, mouseX - startX, mouseY - startY);
+    });
+
+    // マウスアップ
+    canvas.addEventListener('mouseup', (e) => {
+      if (!isDrawing || !imageLoaded) return;
+      isDrawing = false;
+
+      const rect = canvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+
+      mosaicRects.push({
+        left: Math.min(startX, endX),
+        top: Math.min(startY, endY),
+        right: Math.max(startX, endX),
+        bottom: Math.max(startY, endY)
+      });
+
+      redrawImage();
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      isDrawing = false;
+    });
+
+    async function submitImage() {
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        await postImage("/upload", blob);
+
+        // 初期状態へ戻す
+        mosaicRects = [];
+        imageLoaded = false;
+        drawInitialCanvas();
+        checkBox.checked = false;
+        submitBtn.disabled = true;
+        nextBtn.disabled = false;
+      }, "image/png");
+    }
+
+  </script>
+</body>
+</html>
+

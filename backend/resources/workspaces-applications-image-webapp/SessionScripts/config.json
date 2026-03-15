@@ -1,0 +1,13 @@
+{
+  "SessionStart": {
+    "executables": [
+      {
+        "context": "user",
+        "filename": "C:\\App\\webapp\\run.bat",
+        "arguments": "",
+        "s3LogEnabled": true
+      }
+    ],
+    "waitingTime": 30
+  }
+}
