@@ -7,7 +7,7 @@ import sys
 import urllib
 import os
 import json
-import uuid
+from zoneinfo import ZoneInfo
 from datetime import datetime, timezone, timedelta
 
 rekognition = boto3.client("rekognition")
@@ -281,8 +281,10 @@ def acquire_lock(photo_id):
     ロック取得時は status を PROCESSING に更新し、
     processingExpiresAt に15分後の期限を設定する
     """
-    now = int(datetime.now(timezone.utc).timestamp())
-    expires = int((datetime.now(timezone.utc) + timedelta(minutes=15)).timestamp())
+    now_dt = datetime.now(timezone.utc)
+    now = int(now_dt.timestamp())
+    expires = int((now_dt + timedelta(minutes=15)).timestamp())
+    now_jst_str = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
 
     try:
         dynamodb.update_item(
@@ -290,6 +292,7 @@ def acquire_lock(photo_id):
             Key={"photoId": {"S": photo_id}},
             UpdateExpression="""
                 SET #status = :processing,
+                    updatedAt = :now_jst_str,
                     processingExpiresAt = :expires
             """,
             ConditionExpression="""
@@ -302,6 +305,7 @@ def acquire_lock(photo_id):
                 ":processing": {"S": STATUS_PROCESSING},
                 ":expires": {"N": str(expires)},
                 ":now": {"N": str(now)},
+                ":now_jst_str": {"S": now_jst_str},
             },
         )
 
@@ -320,16 +324,23 @@ def complete(photo_id):
 
     status を AUTO_MOSAICED に更新し、
     processingExpiresAt を削除する
+    updatedAt を現在時刻に更新する
     """
+    now = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
+
     dynamodb.update_item(
         TableName=PHOTO_TABLE_NAME,
         Key={"photoId": {"S": photo_id}},
         UpdateExpression="""
-            SET #status = :done
+            SET #status = :done,
+                updatedAt = :now
             REMOVE processingExpiresAt
         """,
         ExpressionAttributeNames={"#status": "status"},
-        ExpressionAttributeValues={":done": {"S": STATUS_AUTO_MOSAICED}},
+        ExpressionAttributeValues={
+            ":done": {"S": STATUS_AUTO_MOSAICED},
+            ":now": {"S": now},
+        },
     )
 
 
