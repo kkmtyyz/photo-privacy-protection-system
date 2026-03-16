@@ -139,7 +139,6 @@ export class MosaicProcessing extends Construct {
       timeout: cdk.Duration.minutes(3),
       memorySize: 1024,
       layers: [layer],
-      recursiveLoop: lambda.RecursiveLoop.TERMINATE, // トリガー元S3の異なるパスに書き戻すが、念のため無限ループ防止
       environment: {
         EXPERIENCE_PHOTO_PROCESSING_TABLE_NAME: this.experiencePhotoProcessingTable.tableName,
         PHOTO_REVIEW_QUEUE_URL: this.photoReviewQueue.queueUrl,
