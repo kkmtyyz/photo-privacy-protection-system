@@ -15,7 +15,7 @@
 - AWS Global Network内から公開AppSync APIへのクエリ
 - ユーザー向けサービスとデータ処理基盤の分断、および公開データへのCognito IDプールによる認可制御
 
-ブログ記事「」にて詳しく解説しています。
+ブログ記事「[AWSでテーマパークの体験フォト処理基盤を構築 ― 自動モザイク×ヒューマンインザループ](https://kkmtyyz.hatenablog.com/entry/2025/12/24/234405)」にて詳しく解説しています。
 
 ## 動作イメージ
 ![arch](./readme_img/use_case.png)
@@ -80,10 +80,10 @@
 
 
 ## 使用している画像について
-- sample-photo-01として以下の画像を使用しました。
+- sample-photo-01として以下の画像を使用しました。  
 [白いシャツを着た男の浅い焦点の写真](https://unsplash.com/ja/%E5%86%99%E7%9C%9F/%E7%99%BD%E3%81%84%E3%82%B7%E3%83%A3%E3%83%84%E3%82%92%E7%9D%80%E3%81%9F%E7%94%B7%E3%81%AE%E6%B5%85%E3%81%84%E7%84%A6%E7%82%B9%E3%81%AE%E5%86%99%E7%9C%9F-nPz8akkUmDI)
 
-- sample-photo-02として以下の画像を使用しました。
+- sample-photo-02として以下の画像を使用しました。  
 [メンズグレークルーネックTシャツ](https://unsplash.com/ja/%E5%86%99%E7%9C%9F/%E3%83%A1%E3%83%B3%E3%82%BA%E3%82%B0%E3%83%AC%E3%83%BC%E3%82%AF%E3%83%AB%E3%83%BC%E3%83%8D%E3%83%83%E3%82%AFt%E3%82%B7%E3%83%A3%E3%83%84-Of_m3hMsoAA)
 
 
