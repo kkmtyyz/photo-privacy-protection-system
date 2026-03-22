@@ -57,6 +57,7 @@
 
 - AWS CDKにて`cdk bootstrap`が完了している必要があります
 - `@aws-cdk/aws-lambda-python-alpha`にてLambdaレイヤーを作成するためDockerが起動している必要があります
+- SSMパラメーターストアにメール送信可能なSESの送信元アドレスを`/photo-protection/ses/SenderAddress`として設定している必要があります
 
 ### デプロイ
 1. CDKとAmplify Gen2をデプロイ（順不同、どちらを先にやっても大丈夫です）
